@@ -1,5 +1,4 @@
 package com.example.test;
-
 import android.annotation.TargetApi;
 import android.app.Activity;
 import android.app.Service;
@@ -18,6 +17,7 @@ import android.os.Build;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.IBinder;
+import android.os.SystemClock;
 import android.util.Base64;
 import android.util.DisplayMetrics;
 import android.util.Log;
@@ -29,14 +29,9 @@ import android.view.View;
 import android.view.WindowManager;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
-import android.widget.Toast;
-
-import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
-
 import com.example.test.wenzi.AuthService;
 import com.example.test.wenzi.HttpUtil;
-
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -49,20 +44,12 @@ import java.net.URLEncoder;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
-
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.RequestBody;
 import okhttp3.Response;
-
 import static android.content.ContentValues.TAG;
-
-/**
- * Created by branch on 2016-5-25.
- * <p>
- * 启动悬浮窗界面
- */
 @TargetApi(Build.VERSION_CODES.LOLLIPOP)
 public class FloatWindowsService extends Service {
     public static Intent newIntent(Context context, Intent mResultData) {
@@ -73,28 +60,33 @@ public class FloatWindowsService extends Service {
         return intent;
     }
 
+    private SaveTask mSaveTask;
     private MediaProjection mMediaProjection;
     private VirtualDisplay mVirtualDisplay;
     private static Intent mResultData = null;
-    private ImageView jietu, image_tp,choice;
+    private ImageView jietu, image_tp, choice;
     private WindowManager wm;
     private LinearLayout gaodu;
     private ImageReader mImageReader;
+    private String access_token = null;
     private GestureDetector mGestureDetector;
     private WindowManager.LayoutParams params;
     private int mScreenWidth;
     private int mScreenHeight;
     private int mScreenDensity;
     private List<Tools> list = new ArrayList<>();
-    private int height_view;
+    private int height_view = 0;
     private Handler handler = new Handler();
     private View view1;
     private String key = null;
     private RecyclerView ry;
+    private int sx, sy;
+    private int gaodu_hight = 100;
+    private SaveTask saveTask;
 
     @Override
     public void onCreate() {
-        super.onCreate();
+        saveTask = new SaveTask();//第一次
         createFloatView();//没得问题这个
     }
 
@@ -119,12 +111,12 @@ public class FloatWindowsService extends Service {
         image_tp = view.findViewById(R.id.image);
         gaodu = view.findViewById(R.id.gaodu);
         ry = view.findViewById(R.id.ry);
-        choice=view.findViewById(R.id.choice);
+        choice = view.findViewById(R.id.choice);
         choice.setOnClickListener(v -> {
-            if(ry.getVisibility()==View.GONE){
+            if (ry.getVisibility() == View.GONE) {
                 ry.setVisibility(View.VISIBLE);
                 choice.setBackgroundResource(R.drawable.jiantou2);
-            }else {
+            } else {
                 ry.setVisibility(View.GONE);
                 choice.setBackgroundResource(R.drawable.jiantou1);
             }
@@ -133,7 +125,6 @@ public class FloatWindowsService extends Service {
         params = new WindowManager.LayoutParams();
         params.type = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY;
         params.flags = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL | WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
-
         //设置视图的宽高
         params.width = WindowManager.LayoutParams.MATCH_PARENT;
         params.height = WindowManager.LayoutParams.WRAP_CONTENT;
@@ -153,20 +144,24 @@ public class FloatWindowsService extends Service {
         jietu.setOnTouchListener(new View.OnTouchListener() {
             @Override
             public boolean onTouch(View v, MotionEvent event) {
-//                gaodu.setVisibility(View.GONE);
                 return mGestureDetector.onTouchEvent(event);
             }
         });
         gaodu.setOnTouchListener(new View.OnTouchListener() {
             @Override
             public boolean onTouch(View v, MotionEvent event) {
-                return false;
+                return mGestureDetector.onTouchEvent(event);
             }
         });
-
         mImageReader = ImageReader.newInstance(mScreenWidth, mScreenHeight, PixelFormat.RGBA_8888, 1);
     }
 
+    private void Back_Desktop() {
+        Intent intent = new Intent(Intent.ACTION_MAIN);
+        intent.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        intent.addCategory(Intent.CATEGORY_HOME);
+        startActivity(intent);
+    }
 
     private class FloatGestrueTouchListener implements GestureDetector.OnGestureListener {
         int lastX, lastY;
@@ -198,8 +193,10 @@ public class FloatWindowsService extends Service {
             int dy = (int) e2.getRawY() - lastY;
             params.x = paramX + dx;
             params.y = paramY + dy;
+            height_view = params.y;
+            gaodu_hight = gaodu.getMeasuredHeight();
             // 更新悬浮窗位置
-//            wm.updateViewLayout(gaodu, params);
+            wm.updateViewLayout(gaodu, params);
             return true;
         }
 
@@ -216,6 +213,7 @@ public class FloatWindowsService extends Service {
 
     private void startScreenShot() {
         gaodu.setVisibility(View.GONE);
+        SystemClock.sleep(50);
         Handler handler1 = new Handler();
         handler1.postDelayed(new Runnable() {
             public void run() {
@@ -232,11 +230,6 @@ public class FloatWindowsService extends Service {
         }, 30);
     }
 
-
-    private void createImageReader() {
-
-    }
-
     public void startVirtual() {
         if (mMediaProjection != null) {
             virtualDisplay();
@@ -250,6 +243,7 @@ public class FloatWindowsService extends Service {
         if (mResultData == null) {
             Intent intent = new Intent(Intent.ACTION_MAIN);
             intent.addCategory(Intent.CATEGORY_LAUNCHER);
+            intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS);
             startActivity(intent);
         } else {
             mMediaProjection = getMediaProjectionManager().getMediaProjection(Activity.RESULT_OK, mResultData);
@@ -274,8 +268,20 @@ public class FloatWindowsService extends Service {
             startScreenShot();
         } else {
             Log.e(TAG, "2");
-            SaveTask mSaveTask = new SaveTask();
-            AsyncTaskCompat.executeParallel(mSaveTask, image);
+            if (saveTask.getStatus() == AsyncTask.Status.RUNNING) {//正在运行
+                Log.e(TAG, "startCapture: " + "正在运行");
+                saveTask.cancel(true);// 正在运行 就关闭它
+                saveTask = new SaveTask();
+                saveTask.execute(image);
+            } else if (saveTask.getStatus() == AsyncTask.Status.PENDING) {//第一次没有运行就打开  待处理
+                Log.e(TAG, "startCapture: " + "第一次未运行");
+                saveTask.execute(image);
+            } else if (saveTask.getStatus() == AsyncTask.Status.FINISHED) {//已完成
+                Log.e(TAG, "startCapture: " + "已完成");
+                saveTask.cancel(true);// 正在运行 就关闭它
+                saveTask = new SaveTask();
+                saveTask.execute(image);
+            }
         }
     }
 
@@ -298,23 +304,37 @@ public class FloatWindowsService extends Service {
             int rowPadding = rowStride - pixelStride * width;
             try {
                 new Thread(() -> {
-                    Bitmap bitmap = Bitmap.createBitmap(width + rowPadding / pixelStride, height, Bitmap.Config.ARGB_8888);
-                    bitmap.copyPixelsFromBuffer(buffer);
+                    Bitmap bitmap;
+                    if (gaodu_hight == 100) {
+                        bitmap = Bitmap.createBitmap(width + rowPadding / pixelStride, height, Bitmap.Config.ARGB_8888);
+                        bitmap.copyPixelsFromBuffer(buffer);
+                    } else {
+                        bitmap = Bitmap.createBitmap(width + rowPadding / pixelStride, height, Bitmap.Config.ARGB_8888);
+                        bitmap.copyPixelsFromBuffer(buffer);
+                    }
                     Log.e(TAG, String.valueOf(height_view));
                     ScreenUtils screenUtils = new ScreenUtils();
-                    bitmap = Bitmap.createBitmap(bitmap, 0, screenUtils.getStatusHeight(getApplicationContext()), width, 101);
+                    Log.e(TAG, "doInBackground: X是" + height_view);
+                    if (height_view == 0 && gaodu_hight == 100) {
+                        bitmap = Bitmap.createBitmap(bitmap, 0, screenUtils.getStatusHeight(getApplicationContext()) + height_view, width, gaodu_hight);
+                    } else {
+                        bitmap = Bitmap.createBitmap(bitmap, 0, screenUtils.getStatusHeight(getApplicationContext()) + height_view, width, gaodu_hight);
+                    }
                     String data = null;
                     data = accurateBasic(bitmap);
+                    Log.e(TAG, data);
                     try {
-                        StringBuffer sb=new StringBuffer();
+                        StringBuffer sb = new StringBuffer();
                         JSONObject jsonObject = new JSONObject(data);
-                        for(int i=0;i<jsonObject.getJSONArray("words_result").length();i++){
+                        for (int i = 0; i < jsonObject.getJSONArray("words_result").length(); i++) {
                             String text = jsonObject.getJSONArray("words_result").getJSONObject(i).getString("words");
                             sb.append(text);
                         }
                         if (key != null) {
+                            Log.e(TAG, "doInBackground: " + "登录成功");
                             send_request(key, sb.toString());//秘钥题目复制过去
                         } else {
+                            Log.e(TAG, "doInBackground: " + "获取身份");
                             key = send();//授权用户
                             send_request(key, sb.toString());//秘钥题目复制过去
                         }
@@ -336,10 +356,7 @@ public class FloatWindowsService extends Service {
             }
             return null;
         }
-
         private void send_request(String key, String timu) {
-            Log.e(TAG, key );
-            Log.e(TAG, timu );
             list.clear();
             JSONObject jsonObject = null;
             try {
@@ -356,27 +373,23 @@ public class FloatWindowsService extends Service {
                             list.add(new Tools("题目：" + title, "答案：" + info));
                         }
                     } else {
-                        handler.post(() -> {
-                            Toast.makeText(FloatWindowsService.this, "请输入题目", Toast.LENGTH_SHORT).show();
-                        });
+//                        handler.post(() -> {
+//                            Toast.makeText(FloatWindowsService.this, "请输入题目", Toast.LENGTH_SHORT).show();
+//                        });
                     }
-                    handler.post(() -> {
-                        ry.setLayoutManager(new LinearLayoutManager(FloatWindowsService.this));
-                        Ry ry1 = new Ry(list);
-                        ry.setAdapter(ry1);
-//                        dialog.dismiss();
-                        Toast.makeText(FloatWindowsService.this, "点击题目即可查看答案", Toast.LENGTH_LONG).show();
-                    });
+//                    handler.post(() -> {
+//                        ry.setLayoutManager(new LinearLayoutManager(FloatWindowsService.this));
+//                        Ry ry1 = new Ry(list);
+//                        ry.setAdapter(ry1);
+//                        Toast.makeText(FloatWindowsService.this, "左上角箭头查看答案", Toast.LENGTH_LONG).show();
+//                    });
                 } else {
-                    handler.post(() -> {
-                        Toast.makeText(FloatWindowsService.this, "没有拿到题目", Toast.LENGTH_SHORT).show();
-                    });
+//                    handler.post(() -> {
+//                        Toast.makeText(FloatWindowsService.this, "没有拿到题目", Toast.LENGTH_SHORT).show();
+//                    });
                 }
             } catch (JSONException e) {
-                handler.post(() -> {
-//                    dialog.dismiss();
-                    Toast.makeText(FloatWindowsService.this, "找不到题目", Toast.LENGTH_SHORT).show();
-                });
+//
                 e.printStackTrace();
             } catch (IOException e) {
                 e.printStackTrace();
@@ -472,12 +485,18 @@ public class FloatWindowsService extends Service {
                 String encodeStr = new String(checkFile(bitmap));
                 String imgParam = URLEncoder.encode(encodeStr, "UTF-8");
                 String param = "image=" + imgParam;
-                Log.e(TAG, param);
                 // 注意这里仅为了简化编码每一次请求都去获取access_token，线上环境access_token有过期时间， 客户端可自行缓存，过期后重新获取。
                 AuthService authService = new AuthService();
-                String result = HttpUtil.post(url, authService.getAuth(), param);
-                System.out.println(result);
-                return result;
+                if (access_token == null) {
+                    access_token = authService.getAuth();
+                    Log.e(TAG, "获取身份");
+                    String result = HttpUtil.post(url, access_token, param);
+                    return result;
+                } else {
+                    Log.e(TAG, "登录成功");
+                    String result = HttpUtil.post(url, access_token, param);
+                    return result;
+                }
             } catch (Exception e) {
                 e.printStackTrace();
             }
@@ -488,16 +507,10 @@ public class FloatWindowsService extends Service {
         protected void onPostExecute(Bitmap bitmap) {
             super.onPostExecute(bitmap);
             //预览图片
-            if (bitmap != null) {
 
-                ((ScreenCaptureApplication) getApplication()).setmScreenCaptureBitmap(bitmap);
-                Log.e("ryze", "获取图片成功");
-                startActivity(PreviewPictureActivity.newIntent(getApplicationContext()));
-            }
             gaodu.setVisibility(View.VISIBLE);
         }
     }
-
 
     private void tearDownMediaProjection() {
         if (mMediaProjection != null) {

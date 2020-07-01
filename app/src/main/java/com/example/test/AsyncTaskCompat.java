@@ -1,8 +1,11 @@
 package com.example.test;
 
 import android.os.AsyncTask;
+import android.util.Log;
 
 public class AsyncTaskCompat  {
+    private static final String TAG ="111111:" ;
+
     @Deprecated
     public static <Params, Progress, Result> AsyncTask<Params, Progress, Result> executeParallel(
             AsyncTask<Params, Progress, Result> task,
